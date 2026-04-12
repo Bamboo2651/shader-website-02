@@ -8,6 +8,62 @@ const ctxCache = new Map();
 
 let mouseX = 0, mouseY = 0;
 
+// シェーダーのソースコード
+const vertSrc = `
+    attribute vec2 position;
+    void main() {
+        gl_Position = vec4(position, 0.0, 1.0);
+    }
+`;
+
+const fragSrc = `
+    void main() {
+        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    }
+`;
+
+function createShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    return shader;
+}
+
+function createProgram(gl, vertSrc, fragSrc) {
+    const vert = createShader(gl, gl.VERTEX_SHADER, vertSrc);
+    const frag = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+    const program = gl.createProgram();
+    gl.attachShader(program, vert);
+    gl.attachShader(program, frag);
+    gl.linkProgram(program);
+    return program;
+}
+
+function initWebGL(canvas) {
+    const gl = canvas.getContext("webgl");
+
+    const program = createProgram(gl, vertSrc, fragSrc);
+    gl.useProgram(program);
+
+    // 画面全体をカバーする四角形の頂点
+    const vertices = new Float32Array([
+        -1, -1,
+         1, -1,
+        -1,  1,
+         1,  1,
+    ]);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+    const loc = gl.getAttribLocation(program, "position");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    return gl;
+}
+
 document.addEventListener("mousemove", e => {
     mouseX = e.clientX;
     mouseY = e.clientY;
@@ -59,7 +115,7 @@ function drawClipped(ctx, video, rect) {
 }
 
 function initMasks() {
-    masks.forEach(mask => {
+    masks.forEach((mask, i) => {
         const r = mask.getBoundingClientRect();
 
         state.set(mask, {
@@ -69,7 +125,8 @@ function initMasks() {
             h: r.height,
             dragging: false,
             ox: 0,
-            oy: 0
+            oy: 0,
+            isWebGL: i === 0  // box1だけWebGL
         });
 
         mask.style.left = "0";
@@ -87,19 +144,25 @@ function initMasks() {
 }
 
 function initCanvases() {
-    masks.forEach(mask => {
+    masks.forEach((mask) => {
         const s = state.get(mask);
         const canvas = mask.querySelector("canvas");
         canvas.width = s.w;
         canvas.height = s.h;
-        ctxCache.set(mask, canvas.getContext("2d"));
+
+        if (s.isWebGL) {
+            const gl = initWebGL(canvas);
+            ctxCache.set(mask, { gl, isWebGL: true });
+        } else {
+            ctxCache.set(mask, { ctx: canvas.getContext("2d"), isWebGL: false });
+        }
     });
 }
 
 function draw() {
     masks.forEach(mask => {
         const s = state.get(mask);
-        const ctx = ctxCache.get(mask);
+        const cache = ctxCache.get(mask);
 
         if (s.dragging) {
             s.x = mouseX - s.ox;
@@ -107,8 +170,18 @@ function draw() {
             mask.style.transform = `translate3d(${s.x}px,${s.y}px,0)`;
         }
 
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        drawClipped(ctx, video, s);
+        if (cache.isWebGL) {
+            // WebGL描画（赤く塗る）
+            const gl = cache.gl;
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        } else {
+            // 2D描画（動画）
+            const ctx = cache.ctx;
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            drawClipped(ctx, video, s);
+        }
+
         updateCoords(mask);
     });
 
