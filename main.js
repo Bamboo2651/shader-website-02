@@ -52,3 +52,81 @@ function drawClipped(ctx, video, rect) {
     );
 }
 
+function initMasks() {
+    masks.forEach(mask => {
+        const r = mask.getBoundingClientRect();
+
+        state.set(mask, {
+            x: r.left,
+            y: r.top,
+            w: r.width,
+            h: r.height
+        });
+
+        mask.style.left = "0";
+        mask.style.top = "0";
+        mask.style.transform = `translate3d(${r.left}px, ${r.top}px, 0)`;
+
+        mask.addEventListener("mouseenter", () => {
+            isHoveringMask = true;
+            globalHud.textContent = "GRAB";
+        });
+        mask.addEventListener("mouseleave", () => {
+            isHoveringMask = false;
+        });
+    });
+}
+function initCanvases() {
+    masks.forEach(mask => {
+        const s = state.get(mask);
+        const canvas = mask.querySelector("canvas");
+        canvas.width = s.w;
+        canvas.height = s.h;
+    });
+}
+
+function draw() {
+    masks.forEach(mask => {
+        const s = state.get(mask);
+        const canvas = mask.querySelector("canvas");
+        const ctx = canvas.getContext("2d");
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawClipped(ctx, video, s);
+        updateCoords(mask);
+    });
+
+    requestAnimationFrame(draw);
+}
+
+masks.forEach(mask => {
+    let dragging = false;
+    let ox = 0, oy = 0;
+
+    mask.addEventListener("mousedown", e => {
+        dragging = true;
+        const s = state.get(mask);
+        ox = e.clientX - s.x;
+        oy = e.clientY - s.y;
+        mask.style.cursor = "grabbing";
+    });
+
+    mask.addEventListener("mousemove", e => {
+        if (!dragging) return;
+        const s = state.get(mask);
+        s.x = e.clientX - ox;
+        s.y = e.clientY - oy;
+        mask.style.transform = `translate3d(${s.x}px,${s.y}px,0)`;
+    });
+
+    document.addEventListener("mouseup", e => {
+        dragging = false;
+        mask.style.cursor = "grab";
+    });
+});
+
+video.addEventListener("playing", () => {
+    initMasks();
+    initCanvases();
+    draw();
+});
