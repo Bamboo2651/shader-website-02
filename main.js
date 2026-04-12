@@ -54,8 +54,8 @@ const fragSrc = `
     ) {
         vec2 distortionDirection = normalize(p - sphereCenter);
         float focusRadius = sphereRadius * focusFactor;
-        float focusStrength = sphereRadius / 5000.0;
-        vec2 df = abs(p - sphereCenter) - boxSize * 0.5 * focusFactor;
+        float focusStrength = sphereRadius / 4500.0;
+        vec2 df = abs(p - sphereCenter) - boxSize * 0.45 * focusFactor;
         float focusSdf = length(max(df, 0.0)) + min(max(df.x, df.y), 0.0);
         vec2 d = abs(p - sphereCenter) - boxSize * 0.5;
         float speherSdf = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
@@ -301,7 +301,7 @@ function initMasks() {
 
         mask.addEventListener("mouseenter", () => {
             isHoveringMask = true;
-            globalHud.textContent = "GRAB";
+            globalHud.textContent = "";
         });
         mask.addEventListener("mouseleave", () => {
             isHoveringMask = false;
