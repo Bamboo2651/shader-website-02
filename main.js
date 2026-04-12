@@ -8,17 +8,21 @@ const ctxCache = new Map();
 
 let mouseX = 0, mouseY = 0;
 
-// シェーダーのソースコード
 const vertSrc = `
     attribute vec2 position;
+    varying vec2 vTexCoord;
     void main() {
+        vTexCoord = position * 0.5 + 0.5;
         gl_Position = vec4(position, 0.0, 1.0);
     }
 `;
 
 const fragSrc = `
+    precision mediump float;
+    uniform sampler2D uTexture;
+    varying vec2 vTexCoord;
     void main() {
-        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        gl_FragColor = texture2D(uTexture, vTexCoord);
     }
 `;
 
@@ -41,11 +45,9 @@ function createProgram(gl, vertSrc, fragSrc) {
 
 function initWebGL(canvas) {
     const gl = canvas.getContext("webgl");
-
     const program = createProgram(gl, vertSrc, fragSrc);
     gl.useProgram(program);
 
-    // 画面全体をカバーする四角形の頂点
     const vertices = new Float32Array([
         -1, -1,
          1, -1,
@@ -57,11 +59,21 @@ function initWebGL(canvas) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-    const loc = gl.getAttribLocation(program, "position");
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const posLoc = gl.getAttribLocation(program, "position");
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-    return gl;
+    // テクスチャの作成
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    const texLoc = gl.getUniformLocation(program, "uTexture");
+    gl.uniform1i(texLoc, 0);
+
+    return { gl, texture, program };
 }
 
 document.addEventListener("mousemove", e => {
@@ -114,6 +126,15 @@ function drawClipped(ctx, video, rect) {
     );
 }
 
+function drawWebGL(gl, texture, video, rect) {
+    // 動画の現在フレームをテクスチャに転送
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
 function initMasks() {
     masks.forEach((mask, i) => {
         const r = mask.getBoundingClientRect();
@@ -126,7 +147,7 @@ function initMasks() {
             dragging: false,
             ox: 0,
             oy: 0,
-            isWebGL: i === 0  // box1だけWebGL
+            isWebGL: i === 0
         });
 
         mask.style.left = "0";
@@ -151,8 +172,8 @@ function initCanvases() {
         canvas.height = s.h;
 
         if (s.isWebGL) {
-            const gl = initWebGL(canvas);
-            ctxCache.set(mask, { gl, isWebGL: true });
+            const { gl, texture, program } = initWebGL(canvas);
+            ctxCache.set(mask, { gl, texture, program, isWebGL: true });
         } else {
             ctxCache.set(mask, { ctx: canvas.getContext("2d"), isWebGL: false });
         }
@@ -171,12 +192,8 @@ function draw() {
         }
 
         if (cache.isWebGL) {
-            // WebGL描画（赤く塗る）
-            const gl = cache.gl;
-            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            drawWebGL(cache.gl, cache.texture, video, s);
         } else {
-            // 2D描画（動画）
             const ctx = cache.ctx;
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
             drawClipped(ctx, video, s);
